@@ -21,21 +21,18 @@
 #'   derived from a call to \code{\link{commandArgs}()}.  Otherwise, a character
 #'   string of arguments that simulates the result of a call to
 #'   \code{\link{commandArgs}}; useful for debugging in interactive mode.
+#' @param pattern,replace See \code{\link{gsub}()}. Used to modify command line
+#'   argument names because names on the command line sometimes don't make very
+#'   good list names.  If either \code{pattern} or \code{replace} is NULL, list
+#'   names will be unmodified.
 #' @returns A named list representing the parsed results of args or, if args is
 #'   NULL, a named list representing a call to \code{\link{commandArgs}()}.
 #' @export
-commandArgsList <- function(args = NULL) {
+commandArgsList <- function(args = NULL, pattern = NULL, replacement = NULL) {
   if(is.null(args)) {
     args <- commandArgs(TRUE)
-    # add a name to the first argument, which is the executable.
-    args[1] <- paste0("--executable=", args[[1]])
   } else {
     if(!is.character(args)) stop("Parameter `args` must be of type character.")
-    # this is a more robust way of getting as.character(args) -- if any element
-    # of args can not be converted to a character, NA is returned with no
-    # warning or error.
-    args <- sapply(args, \(x) tryCatch(as.character(x), error = \(e) NA))
-    args <- as.character(na.omit(args))
   }
 
   if(length(args) == 0) return(list())
@@ -56,53 +53,35 @@ commandArgsList <- function(args = NULL) {
     structure(
       lapply(split_args, "[", 2),
       names = sapply(split_args, "[", 1)
-    )
+    ) |>
+    # convert any NA to TRUE
+    lapply(
+      \(x) {
+        if(is.na(x)) return(TRUE)
+        x
+      })
 
-  # args_list <- lapply(
-  #   args_list,
-  #   \(x) tryCatch(jsonlite::fromJSON(x), error = \(e) x)
-  # )
-
-  args_list
+  args_list |>
+    # if there is a `json` member, convert and add to non-json args
+    convert_json_member() |>
+    # replace hyphens with underscores in the names of the arg list.
+    gsub_names(pattern = pattern, replacement = replacement) |>
+    # Remove all but the first member of any that have duplicate names.
+    remove_duplicate_args()
 }
 
-# @param name_replace a data.frame with two columns (\code{pattern} and
-#   \code{replacement}). \code{\link{gsub}} will be called on all names in the
-#   return list using the values in each row of \code{name_replace}.  By
-#   default, underscores will replace hyphens in the names of the returned list
-#   or sublists.
-
-replace_names <- function(x, name_replace) {
-
-# make any name modifications included in name_replace
-  if(nrow(name_replace) > 0) {
-    for(i in 1:nrow(name_replace)) {
-      x <-
-        recursive_rename(
-          x,
-          gsub,
-          pattern = name_replace$pattern[i],
-          replacement = name_replace$replacement[i])
-    }
-  }
-  x
-}
-
-
-
-# renames all list elements of x, recursively, using 'fun'.  'fun' is a function
-# that accepts the names of a list and returns modified names as a character
-# vector.  Called with signature "fun(names(x), ...)"
-recursive_rename <- function(x, fun, ...) {
+# renames all list elements of x, recursively, using gsub()"
+gsub_names <- function(x, pattern, replacement) {
+  if(is.null(pattern)|is.null(replacement)) return(x)
   if(class(x) != "list") stop("'Recursive rename' only operates on lists (without s3 classes).")
   x <-
     lapply(
     x,
     \(.x) {
       if(class(.x) != "list") return(.x)
-      recursive_rename(.x, fun, ...)
+      gsub_names(.x, pattern, replacement)
     }
   )
-  names(x) <- fun(names(x), ...)
+  names(x) <- gsub(pattern, replacement, names(x))
   x
 }

@@ -4,13 +4,18 @@
 \alias{commandArgsList}
 \title{Parse command line args}
 \usage{
-commandArgsList(args = NULL)
+commandArgsList(args = NULL, pattern = NULL, replacement = NULL)
 }
 \arguments{
 \item{args}{Typlically NULL (the default), in which case \code{args} will be
 derived from a call to \code{\link{commandArgs}()}.  Otherwise, a character
 string of arguments that simulates the result of a call to
 \code{\link{commandArgs}}; useful for debugging in interactive mode.}
+
+\item{pattern, replace}{See \code{\link{gsub}()}. Used to modify command line
+argument names because names on the command line sometimes don't make very
+good list names.  If either \code{pattern} or \code{replace} is NULL, list
+names will be unmodified.}
 }
 \value{
 A named list representing the parsed results of args or, if args is

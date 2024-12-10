@@ -4,7 +4,7 @@
 \alias{batch_log}
 \title{Wrapper for base::log function.}
 \usage{
-batch_log(x, base = exp(1), ...)
+batch_log(x, base = exp(1))
 }
 \arguments{
 \item{x, base}{See \code{\link{log}}.}

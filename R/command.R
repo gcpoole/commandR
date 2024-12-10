@@ -1,161 +1,144 @@
-#' Execute a function from the command line in production, capturing warnings
-#' and errors.
+#' Evaluate an expression with formal capturing and logging or webhook reporting
+#' of the result, including warnings and errors with a stack trace.
 #'
-#' \code{commandR()} allows any function to be used in a production environment.
-#' It is intended to be used like \code{\link{do.call}()}, except that results
-#' of the function are either:
+#' \code{tryCapture()} allows any R expression to be run from the command line
+#' in a production environment so that result can be logged or reported as part
+#' of an automated workflow.
+#'
+#' \code{tryCapture()} is based on \code{\link{tryCatch}()} except that error
+#' handlers are predefined to gracefully report errors and warnings to one of
+#' several destination types.  \code{tryCapture()} builds a list (the "result
+#' list", see Value section below) that contains the command line parameter
+#' strings, the interpretation of those parameters, any warnings or errors
+#' generated, and the results of \code{expr}.  The results list can be:
 #' \itemize{
-#' \item{converted to JSON and written to a file or sent to a webhook;}
+#' \item{saved as an .rdata file;}
 #' \item{printed to stdout or stderr; or}
-#' \item{saved as an .rdata file using \code{\link{saveRDS}()}}
-#' }
+#' \item{converted to JSON and}
+#' \itemize{
+#'   \item{reported to a webhook or}
+#'   \item{logged} to a JSON (text) file; optionally gzipped.}}
 #'
-#' The result of \code{fun} is incorporated into a list that contains a
-#' timestamp, a result type, the command line arguments, the parsed
-#' interpretation of the command line arguments, and a list of any warnings or
-#' errors (complete with stack trace) (see Value, below).  The list can be
-#' printed to stdout or stderr, saved as an .rdata file, posted to a webhook or
-#' written to a file as JSON.
-#'
-#' To operate \code{commandR()} from the command line, place a call to
-#' \code{commandR()} into a R script.  Then, call the script from the command
-#' line (e.g., using Rscript).
-#'
-#' In addition to the parameters to be passed to `fun`, \link{batch()}
-#' recognizes the following command line parameters:
+#' The following parameters, when included on the command line, will be used by
+#' \code{tryCapture()}, and not available in the execution environment for
+#' <expr>.  Instead, they control the behavior of \code{tryCapture()}:
 #'
 #' \itemize{
-#' \item{\code{--report-to=<location>} determines how results are reported.
-#' Value values of \code{report-to} are one of:
+#' \item{\code{--report-to=<destination>} determines how results are reported.
+#' Value values of \code{<destination>} are one of:
 #' \itemize{
 #' \item{the value "stdout" for reporting to stdout (the defualt);}
-#' \item{the value "stderr" for reporting to stderr, or;}
-#' \item{a fully specified file name for a local file;}
-#' \item{a fully specified file name in an S3: bucket (starting with "S3://");}
+#' \item{the value "stderr" for reporting to stderr;}
 #' \item{the URL of a webhook (staring with "http://" or "https://");}
-#' \item{the name of an environment variable containing any of the above.}
+#' \item{a file name (including path, if desired) for a local file; or}
+#' \item{the name of an environment variable associated with any of the above.}
 #' }
-#' Note that the results will be gzipped if .gz is at the end of a local or S3
-#' file name.}
+#' In the case of a file name, the result list will be saved as an `Rdata` file
+#' using \code{\link{saveRDS}()} unless the file extension of the provided file
+#' name is `.json` or `.json.gz`.  For `.json` and `.json.gz` files, the result
+#' list will be converted to JSON and saved as a text file or gzipped text
+#' file.}
+#' \item{\code{--json=<JSON_string>}. Provides parameters using JSON.  Can
+#' include parameters needed by \code{expr} or other parameters used by
+#' tryCapture (e.g., \code{report-to}).  Parameters specified using JSON will
+#' be appended to the end of the parameter list, following any other parameters
+#' not included in the JSON parameters.  <JSON_String> must be a valid JSON
+#' object containing key-value pairs.  To provide a parameter "foo" with a
+#' value, use \code{"foo":"string_value"} or, for a vector,
+#' \code{"foo":[1,2,3]}.  For a parameter switch (parameter without a value),
+#' use \code{"foo":true}}.
 #' \item{\code{--simulate-error=<type>}. Simulates errors for testing and
 #' debugging. <type> is one of "args", "function", "report", or
 #' "function/report". "args" will simulate an error in the processing of command
-#' line arguments, "function" an error in the function passed to `fun`, "report"
-#' an error in reporting results, and "function/report" an error in both the
-#' `fun` and reporting. `fun` errors will be reported to location specified by
-#' `report-to`.  If any other error type is requested, reporting will be to
-#' stderr.}
+#' line arguments, "expr" an error in the expression passed to \code{expr},
+#' "report" an error in reporting results, and "expr/report" an error in both
+#' the expression and reporting. "expr" errors will be reported to location
+#' specified by \code{--report-to}.  If any other error type is requested,
+#' reporting will be to stderr (because reporting to \code{--report-to} is
+#' precluded if an error occurs in argument processing or reporting.}
 #' \item{\code{--simulate-warning=<type>}. Simulates warnings for testing and
 #' debugging.  For <type> definition, see `--simulate-error`}
-#' \item{\code{--overwrite}}. By default, when `--report-to` is a file name, the
-#' file is appended. If `--overwrite` flag is included, the file will be
-#' overwritten (if it exists). `--overwrite` has no effect if `--report-to` is
-#' not a local disk file. }
+#' \item{\code{--overwrite_file}. Affects reporting to files; ignored for other
+#' reporting destinations. When \code{--report-to} is a file name ending in
+#' `.json` or `.json.gz`, \code{--overwrite_file} causes an existing file to be
+#' overwritten rather than appended (the default).  When `report-to` doesn't end
+#' in `.json` or `.json.gz`, \code{--overwrite_file} allows an existing file to
+#' be overwritten rather than raising an error (the default).}}
 #'
-#' As an example, consider the \code{\link{log}} function in R.
-#' \code{\link{log}} takes two arguments, \code{x} and \code{base}. An example
-#' script called "logarithm.R" might be used to calculate and return the log of
-#' values passed from the command line and report the result to a file, webhook,
-#' or stdout.
+#' Note that any argument can be associated with a stand-alone parameter on the
+#' command line (e.g., \code{--report-to=stdout}) OR wrapped within the
+#' \code{--json} value (e.g., \code{--json=\{"report-to":"stdout"\}} Further,
+#' the --json=<JSON_string> is not exclusive.  It can be mixed with other
+#' stand-alone parameters on the command line. If the same parameter name is
+#' provided as a stand-alone parameter and in the \code{--json=<JSON_string>},
+#' the value of the stand-alone parameter will take precedence.
 #'
-#' A simple (but not recommended) call from the command line might look like
-#' this:
+#' Any parameter included on the command line \emph{other than} those described
+#' above (the "expression parameters") will be converted to R
+#' \code{\link{name}s} contained in an execution environment where \code{`expr`}
+#' is evaluated. Therefore, expression parameters are available for use as
+#' \code{\link{name}s} in `expr`. See Examples, below. Note that
+#' \code{mget(ls())} can be used in \code{`expr`} to create a list of all
+#' expression parameters.  See last example in Examples, below.
 #'
-#' \code{Rscript /path/to/logarithm.R --report-to=https://my.webhook.com
-#' --x=12,14,30 --base = 10}
+#' To run R code from the command line directly, use
 #'
-#' and logarithm.R would look like this:
+#' \code{Rscript -e "commandR::tryCapture(<expr>)" --<arg>=<value> --<arg>=...}
 #'
-#' \code{# -- file: logarithm.R -----------------------------} \cr
+#' where \code{<expr>} is the code to be executed.  Alternatively, place a call
+#' to \code{tryCapture()} in an R script and call the script using:
 #'
-#' \code{# wrapper that returns the result of log as a named list} \cr
-#' \code{batch_log <- function(x, base = exp(1), ...) \{} \cr
-#' \code{\verb{   if(is.character(x)) x <- strsplit(x, ",")[[1]]}}
-#' \code{\verb{   log(as.numeric(x), as.numeric(base))}} \cr
-#' \code{\}} \cr
+#' \code{Rscript myScriptWithTryCapture.R --<arg>=<value> --<arg>=...}
 #'
-#' \code{batch(batch_log)}
+#' As required for inclusion in the Examples section (below), all examples show
+#' direct calls to tryCapture() from witin an active R session, (rather than
+#' from the command line).  However, command-line-equivalent are included
+#' \emph{in the comments} above several of the examples below.
 #'
-#' \code{#--------------------------------------------------}
-#'
-#' In this case, \code{batch()} will pass all parameters to
-#' \code{\link{batch_log}()} and all parameters will be passed as character
-#' strings.  There is also no mechanism to control to the data types of
-#' arguments. "12,14,30" (the value of x) is passed to \code{\link{batch_log}()}
-#' as a character. This means that the \code{\link{log}()} function can't be
-#' called directly from within `logarithm.R`.  Instead,
-#' \code{\link{batch_log}()} must be created to do some pre-processing before
-#' \code{\link{log}()} can be called. Also, because `--report-to` and any other
-#' parameters used by \code{batch()} will be passed to
-#' \code{\link{batch_log}()}, `...` must be in the signature for
-#' \code{\link{batch_log}()}, as shown above.
-#'
-#' All of these issues can be avoided by passing command line arguments as two
-#' two JSON objects (the recommended approach), using the parameter names
-#' `--batch-args` and `--fun-args`:
-#'
-#' \code{Rscript /path/to/logarithm.R --batch-args='{"report-to":"stdout"}'
-#' --fun-args='{"x":[45,10,20],"base":10}'}
-#'
-#' In this case, only the arguments in `--batch-args` are passed to `fun` and
-#' the arguments have data types (numeric, logical, string, etc.) Therefore, the
-#' script can be much simpler (and less error prone):
-#'
-#' \code{# -- file: logarithm.R -----------------------------} \cr
-#'
-#' \code{batch(log)}
-#'
-#' \code{#--------------------------------------------------}
-#'
-#' A note on parallel processing... \code{batch} has been tested extensively
-#' with \code{mclapply} for parallel processing. The safest approach is to embed
+#' A note on parallel processing... The safest approach is to embed
 #' \code{mclapply} in a script called from the command prompt using
 #' \code{Rscript} (Google "Rscript command line" for more.) Parallel processing
 #' using \code{mclapply} to call \code{batch} from within Rstudio often works,
-#' but can cause Rstudio to freeze (perhaps only if screen saver engages??).  In
-#' this case, batch processing usually proceeds successfully even after RStudio
-#' is frozen, but RStudio must be terminated manually, potentially leading to
-#' loss of code.
+#' but can cause Rstudio to freeze (seeminly when the screen saver engages??).
+#' In this case, batch processing usually proceeds successfully even after
+#' RStudio is frozen, but RStudio must be terminated manually, potentially
+#' leading to loss of code.
 #'
 #' @returns A numeric vector with a single value: 0 if \code{fun} terminates
-#'   successfully, 1 if \code{fun} terminates successfully with warnings,
-#'   2 if \code{fun} throw an error, and 3 if an error occurs in reporting and
-#'   no report was sent to `--report-to` (in this case a report will go to
-#'   stderr). As a side effect, \code{batch()} creates a JSON object with the
+#'   successfully, 1 if \code{fun} terminates successfully with warnings, 2 if
+#'   \code{fun} throw an error, and 3 if an error occurs in argument processing
+#'   or reporting and no report was sent to `--report-to` (in this case a report
+#'   will go to stderr).
+#'
+#'   In addition, as a side effect, \code{batch()} creates a list with the
 #'   following format:
 #'
-#'   \{
-#'     "resultType": c("Success", "Warning", "Error)
-#'     "warningAndErrorMessages": [(warningMsg1, warningMsg2, ..., warningMsgN) (, error)],
-#'     "time": "2024-09-07 00:30:37.577178 UTC",
-#'     "commandLineArgs": <args>,
-#'     "result": <result from `fun` (as JSON)>
-#'   \}
+#'   list( time = <time of report>, resultType = c("Success", "Warning",
+#'   "Error"), messages = list of wanring messages, commandLineArgs = <args>
+#'   parameter or result from commandArgs(TRUE), reportArgs = list of processed
+#'   args captured by tryCapture(), functionArgs = list of other processed args
+#'   (need by <expr>), result = result from <expr>)
 #'
-#'   Depending on the command line values contained in \code{args}, the JSON
-#'   object will be written to location specified by `--report-to` command line
-#'   parameter. See Details. If fun returns a value successfully, but an error
-#'   prevents reporting to a file or webhook (e.g., the file can't be opened or
-#'   the URL for the webhook is invalid), the error and results from `fun` will
-#'   be reported to stderr. Therefore, even if reporting to a webhook or file is
-#'   requested, piping stderr to a log file is recommended.
+#'   This list, or a JSON representation thereof, will be sent to --report-to
+#'   destination, as described in Details.
 #'
-#' @param fun A function that returns an object that can be converted to JSON
-#'   using \code{\link[jsonlite]{toJSON}()}
+#' @param expr An expression for evaluation.  Any variables required by the
+#'   expression can be passed as command line arguments.  If reporting to a
+#'   .json file or webhook is requested, \code{expr} must return an object that
+#'   can be converted to JSON using \code{\link[jsonlite]{toJSON}()}
 #' @param args Generally set to NULL (the default), in which case \code{batch()}
-#'   will call \code{\link{commandArgs}()} to retrieve and then process command
-#'   line parameters (see Details, below, for required command line arguments).
-#'   Alternatively, a character vector that mimics the results from
-#'   \code{\link{commandArgs}()} can be passed for interactive use or debugging.
-#'   Values must be in the form `--<parameter>=<argument>` (or `--<parameter>`
-#'   for boolean switch).
+#'   will call \code{\link{commandArgs}(TRUE)} to retrieve and then process
+#'   command line parameters. Alternatively, a character vector that mimics the
+#'   results from \code{\link{commandArgs}(TRUE)} can be passed for interactive
+#'   use or debugging. If present, values should be in the form of an character
+#'   vector containing strings in the form `--<parameter>=<argument>` (or
+#'   `--<parameter>` for boolean switch).  Names of named character vectors are
+#'   ignored.
+#' @example /man/examples/tryCapture.R
 #' @export
-commandR <- function(fun, args = NULL) {
+tryCapture <- function(expr, args = NULL) {
 
-  fun_name = substitute(fun) |> as.character()
-  if(fun_name[1] == "::") fun_name <- paste(fun_name[c(2,1,3)], collapse = "")
-
-  # Within `batch()`, these variables act as globals
+  # Within `tryCapture()`, these variables act as globals
   report_arg_names <- c("report_to", "simulate_error", "simulate_warning", "overwrite_file")
   r <-
     list(
@@ -167,10 +150,9 @@ commandR <- function(fun, args = NULL) {
       functionArgs = NULL,
       result = NULL)
 
-  if(!is_set(r$commandLineArgs)) {
+  if(!is_something(r$commandLineArgs)) {
     r$commandLineArgs <- commandArgs(TRUE)
   }
-
 
   # ###############################
   # Helper functions.  Must be defined in this context because these functions
@@ -205,11 +187,13 @@ commandR <- function(fun, args = NULL) {
 
   simulate_conditions <- function(location) {
     types <- c("warning", "error")
+    # get "simulate_warning" and "simulate_error" arguements if present.
     requests <- r$reportArgs[paste0("simulate_", types)]
     funs <- list(warning, stop)
 
     for(i in 1:2) {
-      if(is_set(requests[i]))
+      if(is_something(requests[i]))
+        # if `location` was requested by the user as a simulated condition...
         if(grepl(location, requests[i])) {
           # to simulate error in arg processing, remove
           # any successfully processed args...
@@ -226,7 +210,7 @@ commandR <- function(fun, args = NULL) {
   }
 
   check_report_to <- function() {
-    if(!is_set(r$reportArgs$report_to))
+    if(!is_something(r$reportArgs$report_to))
       stop("Required `--report-to=<destination>` parameter not detected on command line.")
     if(!is.character(r$reportArgs$report_to))
       stop("Required `--report-to=<destination>` parameter must be a character")
@@ -237,19 +221,50 @@ commandR <- function(fun, args = NULL) {
     TRUE
   }
 
+  # test to see if existing .rdata file can be overwritten.
+  check_overwrite_status <- function() {
+    # see if the overwrite flag is set
+    if(!is_something(r$reportArgs$overwrite_file)) {
+      # see if the output is an rdata file.  This is the only case
+      # where overwriting is a concern.  For json output, file will
+      # be appended.
+      is_rdata_output <-
+        !grepl(
+          "(^stderr$)|(^stdout$)|(^http)|(.json(.gz)?$)",
+          r$reportArgs$report_to)
+      # If output is rdata and file exists and overwrite flag is not set,
+      # abort with error to stderr.
+      if(is_rdata_output) {
+        if(file.exists(r$reportArgs$report_to)) {
+          message <-
+            paste0(
+              "File `", r$reportArgs$report_to,
+              "` exists; `--overwrite-file` must be specified to overwrite. ",
+              "NOTE: To preserve file, error reporting redirected to stderr.")
+          r$reportArgs$report_to <<- "stderr"
+          stop(message)
+        }
+      }
+    }
+  }
+
+
+
+  ####################################################################
+  # REPORT the expression
+  ####################################################################
 
   # Report will report results to `report-to` and return a status that is then
-  # returned to the OS as the result of the command line call to R. status =
-  # c(NormalExit = 0, Warning=2, Error=2, ReportingError=3). ReportingError is
-  # broken out from Error because it is more severe that Error.  If there is no
-  # ReportingError, we can assume that Errors have been reported successfully to
-  # `report-to`. In contrast, ReportingErrors and can only be sent to stderr
-  # because, well, reporting to `report-to` generated an error!  Thus, a
-  # ReportingError means that no report was sent to `report-to` and `report-to`
-  # will never get a response, which could have knock-on effect for any pipeline
-  # that is listening to `report-to`.
-  report <- function() {
-
+  # returned to the OS. status = c(NormalExit = 0, Warning=2, Error=2,
+  # ReportingError=3). ReportingError is broken out from Error because it is
+  # more severe that Error.  If there is no ReportingError, we can assume that
+  # Errors have been reported successfully to `report-to`. In contrast,
+  # ReportingErrors can only be sent to stderr because, well, reporting to
+  # `report-to` generated an error!  Thus, a ReportingError means that no report
+  # was sent to `report-to` and `report-to` will never get a response, which
+  # could have knock-on effect for any pipeline that is listening to
+  # `report-to`.
+  report <- function(expr) {
     r$time <<- paste(as.POSIXct(Sys.time(), tz="UTC"), "UTC")
 
     simulate_conditions("report")
@@ -271,7 +286,7 @@ commandR <- function(fun, args = NULL) {
     r$time <<- paste(as.POSIXct(Sys.time(), tz="UTC"), "UTC")
 
     # if report args weren't processed property, report to stderr
-    if(!is_set(report_to)) {
+    if(!is_something(report_to)) {
       report_to <- "stderr"
       # error can't be reported to `report-to` arg so status is 3
       r$resultType <<- "Error **reporting failed**"
@@ -285,6 +300,7 @@ commandR <- function(fun, args = NULL) {
       print(r)
       sink()
     } else if(grepl("^http", report_to)) {
+      r$messages <<- lapply(r$messages, \(x) capture.output(print(x)))
       req <-
         httr2::request(report_to) |>
         httr2::req_method("POST") |>
@@ -292,7 +308,7 @@ commandR <- function(fun, args = NULL) {
       resp <- httr2::req_perform(req)
     } else {
       # only overwrite if parameter is found and is explicitly TRUE!
-      append <- !is_set(r$reportArgs$overwrite_file)
+      append <- !is_something(r$reportArgs$overwrite_file)
       # if we are going json...
       if(grepl(".json(\\.gz)?$", report_to)) {
         # convert the message conditions to text
@@ -309,82 +325,42 @@ commandR <- function(fun, args = NULL) {
     status
   }
 
-  process <- function()     {
-    ###### Make sure `fun` is a character representation of what was passed
-    ###### to `fun`
 
-    if(!class(fun) %in% c("character", "function")) {
-      stop("`fun` must be a function or function name as a character.")
-    }
+  ####################################################################
+  # PROCESS the expression
+  ####################################################################
+  process <- function(expr) {
 
-    ####### PROCESS ARGS
-    #######
+    r[c("reportArgs", "functionArgs")] <<-
+      # convert command line args to a list
+      commandArgsList(
+        r$commandLineArgs,
+        pattern = "-",
+        replacement = "_") |>
+      # split the list into reporting args and function args.
+      (\(x){
+        reportArgs_idx <- names(x) %in% report_arg_names
+        list(reportArgs = x[reportArgs_idx],
+             functionArgs = x[!reportArgs_idx])})()
 
-    args_list <-
-      commandArgsList(r$commandLineArgs) |>
-      convert_json_member() |>
-      replace_names(name_replace = data.frame(pattern = "-", replacement = "_")) |>
-      #      add_missing_arg_values(report_arg_names) |>
-      remove_duplicate_args()
-
-    report_arg_idx <- names(args_list) %in% report_arg_names
-    r$reportArgs <<- args_list[report_arg_idx]
-    r$functionArgs <<- args_list[!report_arg_idx]
-
-    # throw error is report_to is missing or malformed.  if report_to has a
-    # environment variable, make the substitution
+    # throw error is `report_to` argument is missing or malformed.
     check_report_to()
 
     # if report_to contains a environment variable, make the substitution
     if(Sys.getenv(r$reportArgs$report_to) != "")
       r$reportArgs$report_to <- Sys.getenv(report_to)
 
-    # test to see if existing .rdata file can be overwritten.
-    if(!is_set(r$reportArgs$overwrite_file)) {
-      is_rdata_output <-
-        !grepl(
-          "(^stderr$)|(^stdout$)|(^http)|(.json(.gz)?$)",
-          r$reportArgs$report_to)
-      # check we're not allowed to overwrite
-      if(is_rdata_output) {
-        if(file.exists(r$reportArgs$report_to)) {
-          message <-
-            paste0(
-              "File `", r$reportArgs$report_to,
-              "` exists; `--overwrite-file` must be specified to overwrite. ",
-              "NOTE: To preserve file, error reporting redirected to stderr.")
-          r$reportArgs$report_to <<- "stderr"
-          stop(message)
-        }
-      }
-    }
-
+    check_overwrite_status()
     # throw simulated error or warning if requested; is dependent upon args_list
     # so can't be called before args_list is processed.
     simulate_conditions("args")
 
-    ###### CALL fun WITH r$functionArgs #############################
-    ######
-
-    simulate_conditions("function")
-    browser()
-    # to improve the stack trace, build an expression that calls fun
-    # with r$functionArgs.  (Using do.call makes for a horrendous stack trace...)
-    args_as_char <-
-      paste0(names(r$functionArgs), " = r$functionArgs[['", names(r$functionArgs), "']]") |>
-      paste(collapse = ", ")
-    expr <-
-      paste0(fun_name, "(", args_as_char, ")") |>
-      parse(text = _)
+    simulate_conditions("expr")
 
     # evaluate the expression to call `fun`
-    r$result <<- eval(expr)
+    r$result <<- eval(expr, envir = r$functionArgs)
     TRUE
   }
-
-  #########
-  # Begin "batch" logic...
-  #########
 
   # NOTE: TRUE returned by process() and FALSE returned by error handler are
   # currently not saved to a variable.  `report()` determines the status of
@@ -397,13 +373,12 @@ commandR <- function(fun, args = NULL) {
   # reports errors but doesn't trap them.  Second error handler traps the error
   # and returns FALSE.
 
-  processed <-
-    tryCatch(
-      withCallingHandlers(
-        process(),
-        warning = store_warning_with_trace,
-        error = store_error_with_trace),
-      error = \(e) return(FALSE))
+  tryCatch(
+    withCallingHandlers(
+      process(substitute(expr)),
+      warning = store_warning_with_trace,
+      error = store_error_with_trace),
+    error = \(e) return(FALSE))
 
   # report() will return 0, 1, or 2 depending on whether the report was for: 0 =
   # successful processing, 1 = warning in processing, or 2 = error during
@@ -419,6 +394,7 @@ commandR <- function(fun, args = NULL) {
       error = print_error_with_trace),
     error = \(e) return(3)
   )
+
 }
 
 convert_json_member <- function(x) {
@@ -432,20 +408,7 @@ convert_json_member <- function(x) {
   x
 }
 
-add_missing_arg_values <- function(x, names) {
-  missing <- !names %in% names(x)
-  if(any(missing)) {
-    x <- c(
-      x,
-      structure(
-        as.list(rep(FALSE, sum(missing))),
-        names = names[missing]
-      )
-    )
-  }
-  x
-}
-
+# removes any items with duplicated names from a list.
 remove_duplicate_args <- function(x) {
   dups <- duplicated(names(x))
   if(any(dups)) {
@@ -458,7 +421,19 @@ remove_duplicate_args <- function(x) {
   x
 }
 
-is_set <- function(x) {
+#' Is a value something other than NULL or FALSE?
+#'
+#' Useful for investigating if a parameter in a command line list, which can be
+#' missing or FALSE to represent FALSE.
+#' @returns If x is NULL or FALSE, returns FALSE, otherwise return TRUE
+#' @param x value to be tested.
+#' @examples
+#' is_something(NULL)
+#' is_something(FALSE)
+#' is_something("Hello")
+#' is_something(45)
+#' @export
+is_something <- function(x) {
   if(is.null(x)) return(FALSE)
   # if a logical of length 1, return the value.
   if(is.logical(x))
@@ -480,7 +455,8 @@ is_set <- function(x) {
 #' @param x,base See \code{\link{log}}.
 #' @param ... Ignored. See Details.
 #' @export
-batch_log <- function(x, base = exp(1), ...) {
+batch_log <- function(x, base = exp(1)) {
   if(is.character(x)) x <- strsplit(x, ",")[[1]]
+  if(is.character(base)) base <- strsplit(base, ",")[[1]]
   log(as.numeric(x), as.numeric(base))
 }
