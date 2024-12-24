@@ -17,10 +17,10 @@ can be converted to JSON using \code{\link[jsonlite]{toJSON}()}}
 will call \code{\link{commandArgs}(TRUE)} to retrieve and then process
 command line parameters. Alternatively, a character vector that mimics the
 results from \code{\link{commandArgs}(TRUE)} can be passed for interactive
-use or debugging. If present, values should be in the form of an character
-vector containing strings in the form `--<parameter>=<argument>` (or
-`--<parameter>` for boolean switch).  Names of named character vectors are
-ignored.}
+use or debugging. If present, values should be in a character vector
+containing strings in the form `--<parameter>=<argument>` (or
+`--<parameter>` for boolean switch).  If the character vector is named, the
+names are ignored.}
 }
 \value{
 A numeric vector with a single value: 0 if \code{fun} terminates
@@ -32,11 +32,14 @@ A numeric vector with a single value: 0 if \code{fun} terminates
   In addition, as a side effect, \code{batch()} creates a list with the
   following format:
 
-  list( time = <time of report>, resultType = c("Success", "Warning",
-  "Error"), messages = list of wanring messages, commandLineArgs = <args>
-  parameter or result from commandArgs(TRUE), reportArgs = list of processed
-  args captured by tryCapture(), functionArgs = list of other processed args
-  (need by <expr>), result = result from <expr>)
+  \verb{list(
+    time = <time of report>,
+    resultType = c("Success", "Warning", "Error"),
+    messages = list of warning messages,
+    commandLineArgs = either `args` parameter or result from commandArgs(TRUE),
+    reportArgs = processed commandLineArgs controlling tryCapture() reporting,
+    expressionArgs = list of remaining processed commandLineArgs (needed by `expr`),
+    result = result from <expr>)}
 
   This list, or a JSON representation thereof, will be sent to --report-to
   destination, as described in Details.
@@ -48,11 +51,12 @@ of an automated workflow.
 }
 \details{
 \code{tryCapture()} is based on \code{\link{tryCatch}()} except that error
-handlers are predefined to gracefully report errors and warnings to one of
-several destination types.  \code{tryCapture()} builds a list (the "result
-list", see Value section below) that contains the command line parameter
-strings, the interpretation of those parameters, any warnings or errors
-generated, and the results of \code{expr}.  The results list can be:
+handlers are predefined to report results, including errors and warnings, to
+one of several destination types.  \code{tryCapture()} builds a list (the
+"\emph{result list}", see Value section below) that contains the command line
+parameter strings, the interpretation of those parameters, any warnings or
+errors generated, and the results of \code{expr}.  The \emph{result list} can
+be:
 \itemize{
 \item{saved as an .rdata file;}
 \item{printed to stdout or stderr; or}
@@ -62,12 +66,14 @@ generated, and the results of \code{expr}.  The results list can be:
   \item{logged} to a JSON (text) file; optionally gzipped.}}
 
 The following parameters, when included on the command line, will be used by
-\code{tryCapture()}, and not available in the execution environment for
-<expr>.  Instead, they control the behavior of \code{tryCapture()}:
+\code{tryCapture()}, and will not available in the execution environment for
+\code{expr} (more on that environment below).  Instead, they control the
+behavior of \code{tryCapture()} and are referred to, collectively, as
+\emph{report parameters}.
 
 \itemize{
 \item{\code{--report-to=<destination>} determines how results are reported.
-Value values of \code{<destination>} are one of:
+Values of \code{<destination>} are one of:
 \itemize{
 \item{the value "stdout" for reporting to stdout (the defualt);}
 \item{the value "stderr" for reporting to stderr;}
@@ -97,44 +103,57 @@ line arguments, "expr" an error in the expression passed to \code{expr},
 the expression and reporting. "expr" errors will be reported to location
 specified by \code{--report-to}.  If any other error type is requested,
 reporting will be to stderr (because reporting to \code{--report-to} is
-precluded if an error occurs in argument processing or reporting.}
+precluded if an error occurs in argument processing or reporting).}
 \item{\code{--simulate-warning=<type>}. Simulates warnings for testing and
-debugging.  For <type> definition, see `--simulate-error`}
+debugging.  For <type> definition, see `--simulate-error`.  Unless an error
+occurs in reporting, all warnings will be reported to the \code{report-to}
+destination}
 \item{\code{--overwrite_file}. Affects reporting to files; ignored for other
 reporting destinations. When \code{--report-to} is a file name ending in
 `.json` or `.json.gz`, \code{--overwrite_file} causes an existing file to be
 overwritten rather than appended (the default).  When `report-to` doesn't end
 in `.json` or `.json.gz`, \code{--overwrite_file} allows an existing file to
-be overwritten rather than raising an error (the default).}}
+be overwritten rather than raising an error (the default), because .Rdata
+files can not be appended.}}
 
-Note that any argument can be associated with a stand-alone parameter on the
-command line (e.g., \code{--report-to=stdout}) OR wrapped within the
-\code{--json} value (e.g., \code{--json=\{"report-to":"stdout"\}} Further,
-the --json=<JSON_string> is not exclusive.  It can be mixed with other
+Any argument can be associated with a stand-alone parameter on the command
+line (e.g., \code{--report-to=stdout}) OR wrapped within the \code{--json}
+value (e.g., \code{--json=\{"report-to":"stdout"\}} Further, the
+\code{--json=<JSON_string>} is not exclusive.  It can be mixed with other
 stand-alone parameters on the command line. If the same parameter name is
 provided as a stand-alone parameter and in the \code{--json=<JSON_string>},
 the value of the stand-alone parameter will take precedence.
 
-Any parameter included on the command line \emph{other than} those described
-above (the "expression parameters") will be converted to R
-\code{\link{name}s} contained in an execution environment where \code{`expr`}
-is evaluated. Therefore, expression parameters are available for use as
-\code{\link{name}s} in `expr`. See Examples, below. Note that
-\code{mget(ls())} can be used in \code{`expr`} to create a list of all
-expression parameters.  See last example in Examples, below.
+Any parameter included on the command line \emph{other than} \emph{report
+parameters} are termed \emph{expression parameters}.  Each \emph{expression
+parameters} will be converted to R \code{\link{name}} associated with value
+of parameter's argument.  Any argument associated with an \emph{expression
+parameter} that contains valid JSON will be processed as such.
+
+Any R \code{\link{name}} arising from an \emph{expression parameter}
+will be contained in an execution environment where \code{expr} is
+evaluated. Therefore, any expression parameters will be available for use as
+a \code{\link{name}} in `expr`. See Examples, below.
+
+Because only the expression parameters are included in the execution
+environment for <expr>, \code{mget(ls())} can be used within \code{`expr`} to
+create a \code{\link{list}} of all expression parameters.  See last example
+in Examples, below.
 
 To run R code from the command line directly, use
 
 \code{Rscript -e "commandR::tryCapture(<expr>)" --<arg>=<value> --<arg>=...}
 
-where \code{<expr>} is the code to be executed.  Alternatively, place a call
-to \code{tryCapture()} in an R script and call the script using:
+where \code{<expr>} is the code to be executed.  Alternatively, use
+\code{tryCapture()} in an R script (e.g., a script file named `foo.R`) and
+call the script using:
 
-\code{Rscript myScriptWithTryCapture.R --<arg>=<value> --<arg>=...}
+\code{Rscript foo.R --<arg>=<value> --<arg>=...}
 
-As required for inclusion in the Examples section (below), all examples show
-direct calls to tryCapture() from witin an active R session, (rather than
-from the command line).  However, command-line-equivalent are included
+In order to be included in the Examples section (below), examples must use
+direct calls to tryCapture() (using the \code{args} parameter) from within an
+active R session.  Calls from the command line can not be included in
+Examples.  However, command-line-equivalents for many examples are list
 \emph{in the comments} above several of the examples below.
 
 A note on parallel processing... The safest approach is to embed

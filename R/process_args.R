@@ -63,7 +63,7 @@ commandArgsList <- function(args = NULL, pattern = NULL, replacement = NULL) {
 
   args_list |>
     # if there is a `json` member, convert and add to non-json args
-    convert_json_member() |>
+    convert_json_args() |>
     # replace hyphens with underscores in the names of the arg list.
     gsub_names(pattern = pattern, replacement = replacement) |>
     # Remove all but the first member of any that have duplicate names.
@@ -85,3 +85,27 @@ gsub_names <- function(x, pattern, replacement) {
   names(x) <- gsub(pattern, replacement, names(x))
   x
 }
+
+convert_json_args <- function(x) {
+  is_json_param <- grepl("^json$", names(x), ignore.case = T)
+#  is_json_arg <- sapply(x, grepl, pattern = "^[[{].*[]}]") & !is_json_param
+
+  if(any(!is_json_param)) {
+    for(i in which(!is_json_param)) {
+      x[[i]] <-
+        tryCatch(
+          jsonlite::fromJSON(x[[i]]),
+          error = \(e) x[[i]]
+        )
+    }
+  }
+
+  if(any(is_json_param)) {
+    if(sum(is_json_param) > 1) stop("Only one JSON object can be specified")
+    x <- c(
+      x[-which(is_json_param)],
+      jsonlite::fromJSON(x[[which(is_json_param)]]))
+  }
+  x
+}
+
