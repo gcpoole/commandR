@@ -61,11 +61,21 @@ commandArgsList <- function(args = NULL, pattern = NULL, replacement = NULL) {
         x
       })
 
-  args_list |>
-    # if there is a `json` member, convert and add to non-json args
-    convert_json_args() |>
-    # replace hyphens with underscores in the names of the arg list.
-    gsub_names(pattern = pattern, replacement = replacement) |>
+  # if there is a `json` member, convert and add to non-json args
+  args_list <- convert_json_args(args_list)
+
+  # set pattern and replacement defaults
+  if("pattern" %in% names(args_list)) {
+    pattern <- args_list$pattern
+  } else {
+    pattern <- "-"}
+  if("replacement" %in% names(args_list)) {
+    replacement <- args_list$replacement
+  } else {
+    replacement <- "_"}
+
+  # replace pattern with replacement, recursively, in the names of the arg list.
+  gsub_names(args_list, pattern = pattern, replacement = replacement) |>
     # Remove all but the first member of any that have duplicate names.
     remove_duplicate_args()
 }
@@ -73,7 +83,7 @@ commandArgsList <- function(args = NULL, pattern = NULL, replacement = NULL) {
 # renames all list elements of x, recursively, using gsub()"
 gsub_names <- function(x, pattern, replacement) {
   if(is.null(pattern)|is.null(replacement)) return(x)
-  if(class(x) != "list") stop("'Recursive rename' only operates on lists (without s3 classes).")
+  if(class(x) != "list") stop("'Recursive rename' only operates on objects with class(x) == 'list'.")
   x <-
     lapply(
     x,

@@ -63,13 +63,18 @@
 #' debugging.  For <type> definition, see `--simulate-error`.  Unless an error
 #' occurs in reporting, all warnings will be reported to the \code{report-to}
 #' destination}
-#' \item{\code{--overwrite_file}. Affects reporting to files; ignored for other
+#' \item{\code{--overwrite-file}. Affects reporting to files; ignored for other
 #' reporting destinations. When \code{--report-to} is a file name ending in
 #' `.json` or `.json.gz`, \code{--overwrite_file} causes an existing file to be
 #' overwritten rather than appended (the default).  When `report-to` doesn't end
 #' in `.json` or `.json.gz`, \code{--overwrite_file} allows an existing file to
 #' be overwritten rather than raising an error (the default), because .Rdata
-#' files can not be appended.}}
+#' files can not be appended.}
+#' \item{\code{--pattern, --replacement}. When converting argument names to list
+#' names, \code{\link{gsub}()} is performed on argument names using
+#' \code{--pattern} and \code{--replacement}.  Defaults to \code{--pattern="-"}
+#' and \code{replacement="_"} because hyphens are common in command line
+#' argument names but R does not deal gracefully with hyphens in list names.}}
 #'
 #' Any argument can be associated with a stand-alone parameter on the command
 #' line (e.g., \code{--report-to=stdout}) OR wrapped within the \code{--json}
@@ -85,10 +90,10 @@
 #' of parameter's argument.  Any argument associated with an \emph{expression
 #' parameter} that contains valid JSON will be processed as such.
 #'
-#' Any R \code{\link{name}} arising from an \emph{expression parameter}
-#' will be contained in an execution environment where \code{expr} is
-#' evaluated. Therefore, any expression parameters will be available for use as
-#' a \code{\link{name}} in `expr`. See Examples, below.
+#' Any R \code{\link{name}} arising from an \emph{expression parameter} will be
+#' contained in an execution environment where \code{expr} is evaluated.
+#' Therefore, any expression parameters will be available for use as a
+#' \code{\link{name}} in `expr`. See Examples, below.
 #'
 #' Because only the expression parameters are included in the execution
 #' environment for <expr>, \code{mget(ls())} can be used within \code{`expr`} to
@@ -369,10 +374,7 @@ tryCapture <- function(expr, args = NULL) {
 
     r[c("reportArgs", "expressionArgs")] <<-
       # convert command line args to a list
-      commandArgsList(
-        r$commandLineArgs,
-        pattern = "-",
-        replacement = "_") |>
+      commandArgsList(r$commandLineArgs) |>
       # split the list into reporting args and function args.
       (\(x){
         reportArgs_idx <- names(x) %in% report_arg_names
