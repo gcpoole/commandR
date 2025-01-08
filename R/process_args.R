@@ -97,19 +97,25 @@ gsub_names <- function(x, pattern, replacement) {
 }
 
 convert_json_args <- function(x) {
+  # check to see if there is a parameter named "json"
   is_json_param <- grepl("^json$", names(x), ignore.case = T)
-#  is_json_arg <- sapply(x, grepl, pattern = "^[[{].*[]}]") & !is_json_param
+  # check to see if there are URLs
+  is_URL = sapply(x, grepl, pattern = "^https?://", useBytes = TRUE)
+  # only try to process those that are not named "json" and not URLs
+  try_to_process = !is_json_param & !is_URL
 
-  if(any(!is_json_param)) {
-    for(i in which(!is_json_param)) {
+  # for all parameters not named "json" param and non URLs...
+  if(any(try_to_process)) {
+    # try to convert from json and leave alone if conversion fails.
+    for(i in which(try_to_process)) {
       x[[i]] <-
         tryCatch(
           jsonlite::fromJSON(x[[i]]),
-          error = \(e) x[[i]]
-        )
+          error = \(e) x[[i]])
     }
   }
 
+  # unpack the "json" parameter and add to parameter list, checking for dups.
   if(any(is_json_param)) {
     if(sum(is_json_param) > 1) stop("Only one JSON object can be specified")
     x <- c(

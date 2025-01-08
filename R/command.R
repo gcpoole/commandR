@@ -381,7 +381,7 @@ tryCapture <- function(expr, args = NULL) {
         list(reportArgs = x[reportArgs_idx],
              expressionArgs = x[!reportArgs_idx])})()
 
-    # throw error is `report_to` argument is missing or malformed.
+    # throw error if `report_to` argument is missing or malformed.
     check_report_to()
 
     # if report_to contains a environment variable, make the substitution
@@ -391,10 +391,10 @@ tryCapture <- function(expr, args = NULL) {
     check_overwrite_status()
     # throw simulated error or warning if requested; is dependent upon args_list
     # so can't be called before args_list is processed.
+
     simulate_conditions("args")
 
     simulate_conditions("expr")
-
     # evaluate the expression to call `fun`
     r$result <<- eval(expr, envir = r$expressionArgs)
     TRUE
