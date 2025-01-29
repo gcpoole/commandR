@@ -2,13 +2,13 @@
 #'
 #' Creates a \code{stacktrace} object, typically from a \code{warning} or
 #' \code{error} or other \code{\link{condition}} object by appending the current
-#' stack trace or a subsection thereof as a member called \code{$stack_trace}.
+#' stack trace or a subsection thereof as a member called \code{$stacktrace}.
 #'
 #' The class \code{stacktrace} can be built atop and S3 class of
 #' \code{\link{mode} list}, but is anticipated to inherit from the
 #' \code{\link{condition}} class. \code{stacktrace} adds an additional member
-#' (itself a list) called \code{$stack_trace} to the underlying list of the
-#' \code{condition} argument.  The \code{$stack_trace} member contains results
+#' (itself a list) called \code{$stacktrace} to the underlying list of the
+#' \code{condition} argument.  The \code{$stacktrace} member contains results
 #' of \code{\link{sys.calls}()}, as executed from within \code{as.stacktrace()}
 #' and converted to \code{character}. \code{start_key} and \code{end_key}
 #' parameters can be used to extract a relevant section from the middle of a
@@ -22,7 +22,7 @@
 #'   (\code{end_key}) of a relevant portion of the stack call to be extracted.
 #'   The calls between the last call matching \code{start_key} and the first
 #'   call matching \code{end_key} (non_inclusive) will be included in
-#'   \code{$stack_trace}.  If \code{start_key} is NULL or doesn't match, calls
+#'   \code{$stacktrace}.  If \code{start_key} is NULL or doesn't match, calls
 #'   starting with the first call in the stack trace will be included  If
 #'   \code{end_key} is NULL or doesn't match, calls through the last call will
 #'   be included.  Also, the entire stack trace will be included if the last
@@ -34,9 +34,9 @@
 #'   \code{\link{genericFunction-class}})
 #' @returns An object of class \code{stacktrace} that inherits from the class of
 #'   x.  If x also inherits from \code{error} or \code{warning}, result will
-#'   have addtional class of \code{stacktraceError} or \code{stacktraceWarning},
+#'   have additional class of \code{stacktraceError} or \code{stacktraceWarning},
 #'   respectively. Result will also have an additional member in the underlying
-#'   list, called \code{$stack_trace} containing the stack_trace (as a
+#'   list, called \code{$stacktrace} containing the stack trace (as a
 #'   \code{character}) and as excerpted by \code{start_key} and \code{end_key}.
 #' @export
 as.stacktrace <- function(condition, start_key = NULL, end_key = NULL) {
@@ -48,7 +48,7 @@ as.stacktrace <- function(condition, start_key = NULL, end_key = NULL) {
     class(condition) <- c("stacktraceWarning", class(condition))
   }
 
-  condition$stack_trace <-
+  condition$stacktrace <-
     sys.calls() |>
     lapply(\(.x) capture.output(print(.x))) |>
     extract_calls(start_key, end_key) |>
@@ -62,9 +62,9 @@ as.stacktrace <- function(condition, start_key = NULL, end_key = NULL) {
 print.stacktrace <- function(x, ...) {
   NextMethod(generic = NULL, object = NULL, ...)
   cat("  Stack trace:\n")
-  for(i in 1:length(x$stack_trace)) {
+  for(i in 1:length(x$stacktrace)) {
     cat("  [", i, "] ",
-        paste(x$stack_trace[[i]], collapse = "\n      "),
+        paste(x$stacktrace[[i]], collapse = "\n      "),
         "\n",
         sep = "")
   }

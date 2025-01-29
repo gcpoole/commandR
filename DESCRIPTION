@@ -13,4 +13,5 @@ Imports:
     httr2,
     jsonlite,
     readr,
+    snakecase,
     uuid
