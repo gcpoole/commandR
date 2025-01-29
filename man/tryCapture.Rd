@@ -29,16 +29,16 @@ A numeric vector with a single value: 0 if \code{fun} terminates
   or reporting and no report was sent to `--report-to` (in this case a report
   will go to stderr).
 
-  In addition, as a side effect, \code{batch()} creates a list with the
+  In addition, as a side effect, \code{tryCapture()} creates a list with the
   following format:
 
   \verb{list(
     time = <time of report>,
-    resultType = c("Success", "Warning", "Error"),
+    report_type = c("Success", "Warning", "Error"),
     messages = list of warning messages,
-    commandLineArgs = either `args` parameter or result from commandArgs(TRUE),
-    reportArgs = processed commandLineArgs controlling tryCapture() reporting,
-    expressionArgs = list of remaining processed commandLineArgs (needed by `expr`),
+    command_line_args = either `args` parameter or result from commandArgs(TRUE),
+    report_args = processed command_line_args controlling tryCapture() reporting,
+    expression_args = list of remaining processed command_line_args (needed by `expr`),
     result = result from <expr>)}
 
   This list, or a JSON representation thereof, will be sent to --report-to
@@ -119,7 +119,10 @@ files can not be appended.}
 names, \code{\link{gsub}()} is performed on argument names using
 \code{--pattern} and \code{--replacement}.  Defaults to \code{--pattern="-"}
 and \code{replacement="_"} because hyphens are common in command line
-argument names but R does not deal gracefully with hyphens in list names.}}
+argument names but R does not deal gracefully with hyphens in list names.}
+\item{\code{--report-camelcase}.  When set, JSON keys will be reported to
+\code{--report-to} location using camelCase rather than the default
+of snake_case.}}
 
 Any argument can be associated with a stand-alone parameter on the command
 line (e.g., \code{--report-to=stdout}) OR wrapped within the \code{--json}

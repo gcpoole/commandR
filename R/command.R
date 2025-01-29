@@ -74,7 +74,10 @@
 #' names, \code{\link{gsub}()} is performed on argument names using
 #' \code{--pattern} and \code{--replacement}.  Defaults to \code{--pattern="-"}
 #' and \code{replacement="_"} because hyphens are common in command line
-#' argument names but R does not deal gracefully with hyphens in list names.}}
+#' argument names but R does not deal gracefully with hyphens in list names.}
+#' \item{\code{--report-camelcase}.  When set, JSON keys will be reported to
+#' \code{--report-to} location using camelCase rather than the default
+#' of snake_case.}}
 #'
 #' Any argument can be associated with a stand-alone parameter on the command
 #' line (e.g., \code{--report-to=stdout}) OR wrapped within the \code{--json}
@@ -131,16 +134,16 @@
 #'   or reporting and no report was sent to `--report-to` (in this case a report
 #'   will go to stderr).
 #'
-#'   In addition, as a side effect, \code{batch()} creates a list with the
+#'   In addition, as a side effect, \code{tryCapture()} creates a list with the
 #'   following format:
 #'
 #'   \verb{list(
 #'     time = <time of report>,
-#'     resultType = c("Success", "Warning", "Error"),
+#'     report_type = c("Success", "Warning", "Error"),
 #'     messages = list of warning messages,
-#'     commandLineArgs = either `args` parameter or result from commandArgs(TRUE),
-#'     reportArgs = processed commandLineArgs controlling tryCapture() reporting,
-#'     expressionArgs = list of remaining processed commandLineArgs (needed by `expr`),
+#'     command_line_args = either `args` parameter or result from commandArgs(TRUE),
+#'     report_args = processed command_line_args controlling tryCapture() reporting,
+#'     expression_args = list of remaining processed command_line_args (needed by `expr`),
 #'     result = result from <expr>)}
 #'
 #'   This list, or a JSON representation thereof, will be sent to --report-to
@@ -163,19 +166,19 @@
 tryCapture <- function(expr, args = NULL) {
 
   # Within `tryCapture()`, these variables act as globals
-  report_arg_names <- c("report_to", "simulate_error", "simulate_warning", "overwrite_file")
+  report_arg_names <- c("report_to", "simulate_error", "simulate_warning", "report_camelcase", "overwrite_file")
   r <-
     list(
       time = NULL,
-      resultType = NULL,
+      report_type = NULL,
       messages = NULL,
-      commandLineArgs = args,
-      reportArgs = NULL,
-      expressionArgs = NULL,
+      command_line_args = args,
+      report_args = NULL,
+      expression_args = NULL,
       result = NULL)
 
-  if(!is_something(r$commandLineArgs)) {
-    r$commandLineArgs <- commandArgs(TRUE)
+  if(!is_something(r$command_line_args)) {
+    r$command_line_args <- commandArgs(TRUE)
   }
 
   # ###############################
@@ -206,7 +209,7 @@ tryCapture <- function(expr, args = NULL) {
     e <- as.stacktrace(e)
     r$messages <<- append_message(e)
     sink(stderr())
-    r$resultType <<- "Error **reporting failed**"
+    r$report_type <<- "Error **reporting failed**"
     print(r)
     sink(NULL)
     return(3)
@@ -222,7 +225,7 @@ tryCapture <- function(expr, args = NULL) {
   simulate_conditions <- function(location) {
     types <- c("warning", "error")
     # get "simulate_warning" and "simulate_error" arguements if present.
-    requests <- r$reportArgs[paste0("simulate_", types)]
+    requests <- r$report_args[paste0("simulate_", types)]
     funs <- list(warning, stop)
 
     for(i in 1:2) {
@@ -232,8 +235,8 @@ tryCapture <- function(expr, args = NULL) {
           # to simulate error in arg processing, remove
           # any successfully processed args...
           if(types[i] == "error" && location == "args") {
-            r["reportArgs"] <<- list(NULL)
-            r["expressionArgs"] <<- list(NULL)
+            r["report_args"] <<- list(NULL)
+            r["expression_args"] <<- list(NULL)
           }
           funs[[i]](
             "**Simulated** ", types[i], ". `--simulate-", types[i], "=",
@@ -244,13 +247,13 @@ tryCapture <- function(expr, args = NULL) {
   }
 
   check_report_to <- function() {
-    if(!is_something(r$reportArgs$report_to))
+    if(!is_something(r$report_args$report_to))
       stop("Required `--report-to=<destination>` parameter not detected on command line.")
-    if(!is.character(r$reportArgs$report_to))
+    if(!is.character(r$report_args$report_to))
       stop("Required `--report-to=<destination>` parameter must be a character")
-    if(length(r$reportArgs$report_to) != 1)
+    if(length(r$report_args$report_to) != 1)
       stop("Required `--report-to=<destination>` must have one and only one character string.")
-    if(r$reportArgs$report_to == "")
+    if(r$report_args$report_to == "")
       stop("Required `--report-to=<destination>` can't be an empty string.")
     TRUE
   }
@@ -258,24 +261,24 @@ tryCapture <- function(expr, args = NULL) {
   # test to see if existing .rdata file can be overwritten.
   check_overwrite_status <- function() {
     # see if the overwrite flag is set
-    if(!is_something(r$reportArgs$overwrite_file)) {
+    if(!is_something(r$report_args$overwrite_file)) {
       # see if the output is an rdata file.  This is the only case
       # where overwriting is a concern.  For json output, file will
       # be appended.
       is_rdata_output <-
         !grepl(
           "(^stderr$)|(^stdout$)|(^http)|(.json(.gz)?$)",
-          r$reportArgs$report_to)
+          r$report_args$report_to)
       # If output is rdata and file exists and overwrite flag is not set,
       # abort with error to stderr.
       if(is_rdata_output) {
-        if(file.exists(r$reportArgs$report_to)) {
+        if(file.exists(r$report_args$report_to)) {
           message <-
             paste0(
-              "File `", r$reportArgs$report_to,
+              "File `", r$report_args$report_to,
               "` exists; `--overwrite-file` must be specified to overwrite. ",
               "NOTE: To preserve file, error reporting redirected to stderr.")
-          r$reportArgs$report_to <<- "stderr"
+          r$report_args$report_to <<- "stderr"
           stop(message)
         }
       }
@@ -305,33 +308,39 @@ tryCapture <- function(expr, args = NULL) {
     # result_type is reported.  status is returned to operating system as
     # result of command line call..
     if(length(r$messages) == 0) {
-      r$resultType <<- "Success"
+      r$report_type <<- "Success"
       status = 0
     } else if (any(sapply(r$messages, \(x) inherits(x$message, "error")))) {
-      r$resultType <<- "Error"
+      r$report_type <<- "Error"
       status = 2
     } else {
-      r$resultType <<- "Warning"
+      r$report_type <<- "Warning"
       status = 1
     }
 
-    report_to <- r$reportArgs$report_to
+    report_to <- r$report_args$report_to
 
     r$time <<- paste(as.POSIXct(Sys.time(), tz="UTC"), "UTC")
 
-    # if report args weren't processed property, report to stderr
+    # if report args weren't processed properly, report to stderr
     if(!is_something(report_to)) {
       report_to <- "stderr"
       # error can't be reported to `report-to` arg so status is 3
-      r$resultType <<- "Error **reporting failed**"
+      r$report_type <<- "Error **reporting failed**"
       status = 3
     }
 
+    if(identical(r$report_args$report_camelcase, TRUE)) {
+      rename_fun = snakecase::to_lower_camel_case
+    } else {
+      rename_fun = identity
+    }
+
     if(report_to == "stdout") {
-      print(r)
+      print(recursive_setNames(r, rename_fun))
     } else if(report_to == "stderr") {
       sink(stderr())
-      print(r)
+      print(recursive_setNames(r, rename_fun))
       sink()
     } else {
       # we're outputting JSON, so convert message list to text
@@ -345,21 +354,22 @@ tryCapture <- function(expr, args = NULL) {
         req <-
           httr2::request(report_to) |>
           httr2::req_method("POST") |>
-          httr2::req_body_json(r)
+          httr2::req_body_json(recursive_setNames(r, rename_fun))
         resp <- httr2::req_perform(req)
       } else {
         # only overwrite if parameter is found and is explicitly TRUE!
-        append <- !is_something(r$reportArgs$overwrite_file)
+        append <- !is_something(r$report_args$overwrite_file)
         # if we are going json...
         if(grepl(".json(\\.gz)?$", report_to)) {
           # convert the message conditions to text
           readr::write_lines(
             jsonlite::toJSON(
-              r, auto_unbox = TRUE),
+              recursive_setNames(r, rename_fun),
+              auto_unbox = TRUE),
             report_to,
             append = append)
         } else {
-          saveRDS(r, r$reportArgs$report_to)
+          saveRDS(recursive_setNames(r, rename_fun), r$report_args$report_to)
         }
       }
     }
@@ -372,21 +382,21 @@ tryCapture <- function(expr, args = NULL) {
   ####################################################################
   process <- function(expr) {
 
-    r[c("reportArgs", "expressionArgs")] <<-
+    r[c("report_args", "expression_args")] <<-
       # convert command line args to a list
-      commandArgsList(r$commandLineArgs) |>
+      commandArgsList(r$command_line_args) |>
       # split the list into reporting args and function args.
       (\(x){
-        reportArgs_idx <- names(x) %in% report_arg_names
-        list(reportArgs = x[reportArgs_idx],
-             expressionArgs = x[!reportArgs_idx])})()
+        report_args_idx <- names(x) %in% report_arg_names
+        list(report_args = x[report_args_idx],
+             expression_args = x[!report_args_idx])})()
 
     # throw error if `report_to` argument is missing or malformed.
     check_report_to()
 
     # if report_to contains a environment variable, make the substitution
-    if(Sys.getenv(r$reportArgs$report_to) != "")
-      r$reportArgs$report_to <- Sys.getenv(report_to)
+    if(Sys.getenv(r$report_args$report_to) != "")
+      r$report_args$report_to <- Sys.getenv(report_to)
 
     check_overwrite_status()
     # throw simulated error or warning if requested; is dependent upon args_list
@@ -396,7 +406,7 @@ tryCapture <- function(expr, args = NULL) {
 
     simulate_conditions("expr")
     # evaluate the expression to call `fun`
-    r$result <<- eval(expr, envir = r$expressionArgs)
+    r$result <<- eval(expr, envir = r$expression_args)
     TRUE
   }
 
@@ -486,4 +496,31 @@ batch_log <- function(x, base = exp(1)) {
   if(is.character(x)) x <- strsplit(x, ",")[[1]]
   if(is.character(base)) base <- strsplit(base, ",")[[1]]
   log(as.numeric(x), as.numeric(base))
+}
+
+
+#' Recursively convert names of a list using a function.
+#'
+#' Replaces names of x and any named elements within x with the value with
+#' fun(x). Operates recursively on nested lists.  Environments are converted
+#' to named lists.
+#' @param x An object of \code{\ref{mode}} list (including data.frames).
+#' @param fun A function that takes a character vector argument and returns a
+#' character vector of the same length.
+#' @returns The object x with environments converted to lists and names of all
+#' nested named objects equal to fun(names(object)).
+#' @export
+recursive_setNames <- function(x, fun) {
+  if(is.environment(x)) x <- as.list(x)
+  if(!is.null(names(x))) names(x) <- fun(names(x))
+  x <-
+    tryCatch(
+      {
+        sublists <- sapply(x, \(.x) is.list(.x) | is.environment(.x))
+        if(any(sublists)) x[sublists] <- lapply(x[sublists], recursive_setNames, fun = fun)
+        x
+      },
+      error = \(e) x
+    )
+  x
 }
