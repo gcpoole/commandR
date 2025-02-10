@@ -365,7 +365,8 @@ tryCapture <- function(expr, args = NULL) {
           readr::write_lines(
             jsonlite::toJSON(
               recursive_setNames(r, rename_fun),
-              auto_unbox = TRUE),
+              auto_unbox = TRUE,
+              digits = NA),
             report_to,
             append = append)
         } else {
