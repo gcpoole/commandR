@@ -1,7 +1,7 @@
 Package: commandR
 Type: Package
 Title: Eases Use of Rscript in Production Pipelines 
-Version: 1.0.3
+Version: 1.0.4
 Author: Geoffrey Poole
 Maintainer: Geoffrey Poole <gpoole@montana.edu>
 Description: commandR provides the ability to run R expressions, capture error and warnings (with stack trace), and report results (along with any captured errors or warnings to a file (local or S3) or a webhook.
