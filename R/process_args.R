@@ -17,7 +17,7 @@
 #' list with a value of TRUE.  Values assigned to arguments are returned within
 #' the list as strings.
 #'
-#' @param args Typlically NULL (the default), in which case \code{args} will be
+#' @param args Typically NULL (the default), in which case \code{args} will be
 #'   derived from a call to \code{\link{commandArgs}()}.  Otherwise, a character
 #'   string of arguments that simulates the result of a call to
 #'   \code{\link{commandArgs}}; useful for debugging in interactive mode.

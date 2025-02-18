@@ -7,7 +7,7 @@
 recursive_setNames(x, fun)
 }
 \arguments{
-\item{x}{An object of \code{\ref{mode}} list (including data.frames).}
+\item{x}{An object of \code{\link{mode}} list (including data.frames).}
 
 \item{fun}{A function that takes a character vector argument and returns a
 character vector of the same length.}

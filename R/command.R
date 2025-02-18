@@ -505,7 +505,7 @@ batch_log <- function(x, base = exp(1)) {
 #' Replaces names of x and any named elements within x with the value with
 #' fun(x). Operates recursively on nested lists.  Environments are converted
 #' to named lists.
-#' @param x An object of \code{\ref{mode}} list (including data.frames).
+#' @param x An object of \code{\link{mode}} list (including data.frames).
 #' @param fun A function that takes a character vector argument and returns a
 #' character vector of the same length.
 #' @returns The object x with environments converted to lists and names of all

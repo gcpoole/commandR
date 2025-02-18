@@ -7,7 +7,7 @@
 commandArgsList(args = NULL, pattern = NULL, replacement = NULL)
 }
 \arguments{
-\item{args}{Typlically NULL (the default), in which case \code{args} will be
+\item{args}{Typically NULL (the default), in which case \code{args} will be
 derived from a call to \code{\link{commandArgs}()}.  Otherwise, a character
 string of arguments that simulates the result of a call to
 \code{\link{commandArgs}}; useful for debugging in interactive mode.}
