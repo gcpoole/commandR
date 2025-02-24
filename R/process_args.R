@@ -29,6 +29,7 @@
 #'   NULL, a named list representing a call to \code{\link{commandArgs}()}.
 #' @export
 commandArgsList <- function(args = NULL, pattern = NULL, replacement = NULL) {
+
   if(is.null(args)) {
     args <- commandArgs(TRUE)
   } else {
@@ -100,9 +101,13 @@ convert_json_args <- function(x) {
   # check to see if there is a parameter named "json"
   is_json_param <- grepl("^json$", names(x), ignore.case = T)
   # check to see if there are URLs
-  is_URL = sapply(x, grepl, pattern = "^https?://", useBytes = TRUE)
+  is_URL <- sapply(x, grepl, pattern = "^https?://", useBytes = TRUE)
+  # check to see if there are any names of files that exist.
+  is_filename <- sapply(
+    x,
+    \(val) tryCatch(file.exists(val), error = \(e) return(FALSE)))
   # only try to process those that are not named "json" and not URLs
-  try_to_process = !is_json_param & !is_URL
+  try_to_process = !is_json_param & !is_URL & !is_filename
 
   # for all parameters not named "json" param and non URLs...
   if(any(try_to_process)) {
